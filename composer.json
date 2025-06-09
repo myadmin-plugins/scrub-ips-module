@@ -1,0 +1,48 @@
+{
+	"name": "ganesh/myadmin-scrub-ips-module",
+	"type": "myadmin-plugin",
+	"description": "Scrub Ips services module plugin for MyAdmin",
+	"keywords": [
+		"scrub",
+		"scrub_ip",
+		"scrub-ip",
+		"scrub-ips",
+	],
+	"license": "LGPL-2.1-only",
+	"authors": [
+		{
+			"name": "Ganesh R",
+			"homepage": "https:\/\/my.interserver.net\/"
+		}
+	],
+	"config": {
+		"bin-dir": "vendor\/bin",
+		"minimum-stability": "dev"
+	},
+	"require": {
+		"php": ">=5.0.0",
+		"symfony/event-dispatcher": "^5.0@stable",
+		"detain/myadmin-plugin-installer": "dev-master"
+    },
+	"require-dev": {
+		"phpunit/phpunit": "*",
+		"phpunit/phpunit-mock-objects": "*",
+		"vlucas/phpdotenv": "*",
+		"codeclimate/php-test-reporter": "dev-master",
+		"satooshi/php-coveralls": "*",
+		"codacy/coverage": "dev-master"
+	},
+	"require-dev": {
+		"phpunit/phpunit": "*",
+		"phpunit/phpunit-mock-objects": "*",
+		"vlucas/phpdotenv": "*",
+		"codeclimate/php-test-reporter": "dev-master",
+		"satooshi/php-coveralls": "*",
+		"codacy/coverage": "dev-master"
+	},
+	"autoload": {
+		"psr-4": {
+			"Ganesh\\MyadminScrubIps\\": "src/"
+		}
+	}
+}
