@@ -1,5 +1,7 @@
 <?php
 
+namespace Ganesh\ScrubIP;
+
 use Symfony\Component\EventDispatcher\GenericEvent;
 
 class Plugin
