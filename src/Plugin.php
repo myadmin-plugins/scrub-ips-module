@@ -1,6 +1,6 @@
 <?php
 
-namespace Ganesh\ScrubIP;
+namespace Ganesh\MyadminScrubIps;
 
 use Symfony\Component\EventDispatcher\GenericEvent;
 
