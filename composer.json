@@ -6,7 +6,7 @@
 		"scrub",
 		"scrub_ip",
 		"scrub-ip",
-		"scrub-ips",
+		"scrub-ips"
 	],
 	"license": "LGPL-2.1-only",
 	"authors": [
