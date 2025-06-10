@@ -79,6 +79,7 @@ class Plugin
                 $serviceTypes = run_event('get_service_types', false, self::$module);
                 $db = get_module_db(self::$module);
                 $db->query("UPDATE {$settings['TABLE']} SET {$settings['PREFIX']}_status='active' WHERE {$settings['PREFIX']}_id='".$serviceInfo[$settings['PREFIX'].'_id']."'", __LINE__, __FILE__);
+                myadmin_log('myadmin', 'info', 'Scrub IP Activated.', __LINE__, __FILE__);
             })->setReactivate(function ($service) {
                 $serviceTypes = run_event('get_service_types', false, self::$module);
                 $serviceInfo = $service->getServiceInfo();

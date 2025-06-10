@@ -32,14 +32,6 @@
 		"satooshi/php-coveralls": "*",
 		"codacy/coverage": "dev-master"
 	},
-	"require-dev": {
-		"phpunit/phpunit": "*",
-		"phpunit/phpunit-mock-objects": "*",
-		"vlucas/phpdotenv": "*",
-		"codeclimate/php-test-reporter": "dev-master",
-		"satooshi/php-coveralls": "*",
-		"codacy/coverage": "dev-master"
-	},
 	"autoload": {
 		"psr-4": {
 			"Ganesh\\MyadminScrubIps\\": "src/"
