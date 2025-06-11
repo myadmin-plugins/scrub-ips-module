@@ -4,6 +4,11 @@ namespace Ganesh\MyadminScrubIps;
 
 use Symfony\Component\EventDispatcher\GenericEvent;
 
+/**
+ * Class Plugin
+ *
+ * @package Ganesh\MyAdminScrubIps
+ */
 class Plugin
 {
     public static $name = 'Scrub IP Services';
