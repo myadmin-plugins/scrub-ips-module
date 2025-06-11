@@ -59,7 +59,26 @@ class Plugin
         $settings = get_module_settings(self::$module);
         myadmin_log(self::$module, 'info', self::$name.' Deactivation', __LINE__, __FILE__, self::$module, $serviceClass->getId());
         if ($serviceTypes[$serviceClass->getType()]['services_type'] == get_service_define('SCRUB_IPS')) {
-            //Do nothing
+        	$service_extra = $serviceClass->getExtra();
+            if (!empty($serviceClass->getExtra())) {
+            	$tmp = json_decode($serviceClass->getExtra(), true);
+            	$tmp1 = json_decode($tmp['response'], true);
+            	$w_id = str_replace('/wanguard-api/v1/bgp_announcements/', '', $tmp1['href']);
+            	if (intval($w_id) > 0) {
+            		function_requirements('class.Wanguard');
+            		$deleted = \Myadmin\scrub_ips\Wanguard::delete($w_id);
+            		if ($deleted['status'] != 200) {
+            			myadmin_log('myadmin', 'info', 'Unable to delete wangaurdID -'.$w_id.' Scrub IP. ServiceId - '.$serviceClass->getId(), __LINE__, __FILE__);
+            			$smarty = new \TFSmarty();
+		                $smarty->assign('module', self::$module);
+		                $smarty->assign('id', $serviceClass->getId());
+		                $smarty->assign('settings', $settings);
+		                $email = $smarty->fetch('email/admin/deactivate_error.tpl');
+		                $subject = 'ScrubIps Deactivation error ID';
+		                (new \MyAdmin\Mail())->adminMail($subject, $email, false, 'admin/deactivate_error.tpl');
+            		}
+            	}
+            }
         }
     }
 
@@ -77,30 +96,45 @@ class Plugin
                 $serviceInfo = $service->getServiceInfo();
                 $settings = get_module_settings(self::$module);
                 $serviceTypes = run_event('get_service_types', false, self::$module);
-                $db = get_module_db(self::$module);
-                $db->query("UPDATE {$settings['TABLE']} SET {$settings['PREFIX']}_status='active' WHERE {$settings['PREFIX']}_id='".$serviceInfo[$settings['PREFIX'].'_id']."'", __LINE__, __FILE__);
-                myadmin_log('myadmin', 'info', 'Scrub IP Activated.', __LINE__, __FILE__);
+                function_requirements('class.Wanguard');
+                $response = \Myadmin\scrub_ips\Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip']);
+                if ($response['status'] == 201) {
+                	$extra = json_encode($response, true);
+                	$db = get_module_db(self::$module);
+	                $db->query("UPDATE {$settings['TABLE']} SET {$settings['PREFIX']}_status='active',{$settings['PREFIX']}_extra = '$extra' WHERE {$settings['PREFIX']}_id='".$serviceInfo[$settings['PREFIX'].'_id']."'", __LINE__, __FILE__);
+	                myadmin_log('myadmin', 'info', 'Scrub IP Activated. ServiceId - '.$serviceInfo[$settings['PREFIX'].'_id'], __LINE__, __FILE__);
+	            } else {
+	            	myadmin_log('myadmin', 'info', 'Unable to activate Scrub IP. ServiceId - '.$serviceInfo[$settings['PREFIX'].'_id'], __LINE__, __FILE__);
+	            }
             })->setReactivate(function ($service) {
+            	$serviceInfo = $service->getServiceInfo();
                 $serviceTypes = run_event('get_service_types', false, self::$module);
-                $serviceInfo = $service->getServiceInfo();
                 $settings = get_module_settings(self::$module);
                 if ($serviceTypes[$serviceInfo[$settings['PREFIX'].'_type']]['services_type'] == get_service_define('SCRUB_IPS')) {
-	                $db = get_module_db(self::$module);
-	                $db->query("UPDATE {$settings['TABLE']} SET {$settings['PREFIX']}_status='active' WHERE {$settings['PREFIX']}_id='".$serviceInfo[$settings['PREFIX'].'_id']."'", __LINE__, __FILE__);
-	                $GLOBALS['tf']->history->add($settings['TABLE'], 'change_status', 'active', $serviceInfo[$settings['PREFIX'].'_id'], $serviceInfo[$settings['PREFIX'].'_custid']);
-	                $smarty = new \TFSmarty();
-	                $smarty->assign('backup_name', $serviceTypes[$serviceInfo[$settings['PREFIX'].'_type']]['services_name']);
-	                $email = $smarty->fetch('email/admin/backup_reactivated.tpl');
-	                $subject = $serviceInfo[$settings['TITLE_FIELD']].' '.$serviceTypes[$serviceInfo[$settings['PREFIX'].'_type']]['services_name'].' '.$settings['TBLNAME'].' Reactivated';
-	                (new \MyAdmin\Mail())->adminMail($subject, $email, false, 'admin/backup_reactivated.tpl');
+                	function_requirements('class.Wanguard');
+                	$response = \Myadmin\scrub_ips\Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip']);
+                	if ($response['status'] == 201) {
+                		$extra = json_encode($response, true);
+		                $db = get_module_db(self::$module);
+		                $db->query("UPDATE {$settings['TABLE']} SET {$settings['PREFIX']}_status='active',{$settings['PREFIX']}_extra = '$extra' WHERE {$settings['PREFIX']}_id='".$serviceInfo[$settings['PREFIX'].'_id']."'", __LINE__, __FILE__);
+		                $GLOBALS['tf']->history->add($settings['TABLE'], 'change_status', 'active', $serviceInfo[$settings['PREFIX'].'_id'], $serviceInfo[$settings['PREFIX'].'_custid']);
+		                $smarty = new \TFSmarty();
+		                $smarty->assign('backup_name', $serviceTypes[$serviceInfo[$settings['PREFIX'].'_type']]['services_name']);
+		                $email = $smarty->fetch('email/admin/backup_reactivated.tpl');
+		                $subject = $serviceInfo[$settings['TITLE_FIELD']].' '.$serviceTypes[$serviceInfo[$settings['PREFIX'].'_type']]['services_name'].' '.$settings['TBLNAME'].' Reactivated';
+		                (new \MyAdmin\Mail())->adminMail($subject, $email, false, 'admin/backup_reactivated.tpl');
+		                myadmin_log('myadmin', 'info', 'Scrub IP re-activated. ServiceId - '.$serviceInfo[$settings['PREFIX'].'_id'], __LINE__, __FILE__);
+		            } else {
+		            	myadmin_log('myadmin', 'info', 'Unable to re-activate Scrub IP. ServiceId - '.$serviceInfo[$settings['PREFIX'].'_id'], __LINE__, __FILE__);
+		            }
 	            }
             })->setDisable(function ($service) {
                 $serviceInfo = $service->getServiceInfo();
                 $settings = get_module_settings(self::$module);
                 $serviceTypes = run_event('get_service_types', false, self::$module);
                 if ($serviceTypes[$serviceInfo[$settings['PREFIX'].'_type']]['services_type'] == get_service_define('SCRUB_IPS')) {
-                	//Do nothing
-            	}
+                	//Do nothing for now
+                }
             })->setTerminate(function ($service) {
                 $serviceInfo = $service->getServiceInfo();
                 $settings = get_module_settings(self::$module);
@@ -113,6 +147,25 @@ class Plugin
                     $db = get_module_db(self::$module);
                     $serviceClass->setStatus('canceled')->save();
                     $GLOBALS['tf']->history->add($settings['TABLE'], 'change_status', 'canceled', $serviceInfo[$settings['PREFIX'].'_id'], $serviceInfo[$settings['PREFIX'].'_custid']);
+                    if (!empty($serviceInfo[$settings['PREFIX'].'_extra'])) {
+                    	$tmp = json_decode($serviceInfo[$settings['PREFIX'].'_extra'], true);
+                    	$tmp1 = json_decode($tmp['response'], true);
+                    	$w_id = str_replace('/wanguard-api/v1/bgp_announcements/', '', $tmp1['href']);
+                    	if (intval($w_id) > 0) {
+                    		function_requirements('class.Wanguard');
+                    		$deleted = \Myadmin\scrub_ips\Wanguard::delete($w_id);
+                    		if ($deleted['status'] != 200) {
+		            			myadmin_log('myadmin', 'info', 'Unable to delete wangaurdID -'.$w_id.' Scrub IP. ServiceId - '.$serviceClass->getId(), __LINE__, __FILE__);
+		            			$smarty = new \TFSmarty();
+				                $smarty->assign('module', self::$module);
+				                $smarty->assign('id', $serviceClass->getId());
+				                $smarty->assign('settings', $settings);
+				                $email = $smarty->fetch('email/admin/deactivate_error.tpl');
+				                $subject = 'ScrubIps Deactivation error ID';
+				                (new \MyAdmin\Mail())->adminMail($subject, $email, false, 'admin/deactivate_error.tpl');
+            				}
+                    	}
+                    }
                 }
             })->register();
     }
