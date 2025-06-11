@@ -71,7 +71,7 @@ class Plugin
             	$w_id = str_replace('/wanguard-api/v1/bgp_announcements/', '', $tmp1['href']);
             	if (intval($w_id) > 0) {
             		function_requirements('class.Wanguard');
-            		$deleted = \Myadmin\scrub_ips\Wanguard::delete($w_id);
+            		$deleted = Wanguard::delete($w_id);
             		if ($deleted['status'] != 200) {
             			myadmin_log('myadmin', 'info', 'Unable to delete wangaurdID -'.$w_id.' Scrub IP. ServiceId - '.$serviceClass->getId(), __LINE__, __FILE__);
             			$smarty = new \TFSmarty();
@@ -102,7 +102,7 @@ class Plugin
                 $settings = get_module_settings(self::$module);
                 $serviceTypes = run_event('get_service_types', false, self::$module);
                 function_requirements('class.Wanguard');
-                $response = \Myadmin\scrub_ips\Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip']);
+                $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip']);
                 if ($response['status'] == 201) {
                 	$extra = json_encode($response, true);
                 	$db = get_module_db(self::$module);
@@ -117,7 +117,7 @@ class Plugin
                 $settings = get_module_settings(self::$module);
                 if ($serviceTypes[$serviceInfo[$settings['PREFIX'].'_type']]['services_type'] == get_service_define('SCRUB_IPS')) {
                 	function_requirements('class.Wanguard');
-                	$response = \Myadmin\scrub_ips\Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip']);
+                	$response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip']);
                 	if ($response['status'] == 201) {
                 		$extra = json_encode($response, true);
 		                $db = get_module_db(self::$module);
@@ -158,7 +158,7 @@ class Plugin
                     	$w_id = str_replace('/wanguard-api/v1/bgp_announcements/', '', $tmp1['href']);
                     	if (intval($w_id) > 0) {
                     		function_requirements('class.Wanguard');
-                    		$deleted = \Myadmin\scrub_ips\Wanguard::delete($w_id);
+                    		$deleted = Wanguard::delete($w_id);
                     		if ($deleted['status'] != 200) {
 		            			myadmin_log('myadmin', 'info', 'Unable to delete wangaurdID -'.$w_id.' Scrub IP. ServiceId - '.$serviceClass->getId(), __LINE__, __FILE__);
 		            			$smarty = new \TFSmarty();
