@@ -71,7 +71,6 @@ class Plugin
             	$tmp1 = json_decode($tmp['response'], true);
             	$w_id = str_replace('/wanguard-api/v1/bgp_announcements/', '', $tmp1['href']);
             	if (intval($w_id) > 0) {
-            		function_requirements('class.Wanguard');
             		$deleted = Wanguard::delete($w_id);
             		if ($deleted['status'] != 200) {
             			myadmin_log('myadmin', 'info', 'Unable to delete wangaurdID -'.$w_id.' Scrub IP. ServiceId - '.$serviceClass->getId(), __LINE__, __FILE__);
@@ -117,7 +116,6 @@ class Plugin
                 $serviceTypes = run_event('get_service_types', false, self::$module);
                 $settings = get_module_settings(self::$module);
                 if ($serviceTypes[$serviceInfo[$settings['PREFIX'].'_type']]['services_type'] == get_service_define('SCRUB_IPS')) {
-                	function_requirements('class.Wanguard');
                 	$response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip']);
                 	if ($response['status'] == 201) {
                 		$extra = json_encode($response, true);
@@ -158,7 +156,6 @@ class Plugin
                     	$tmp1 = json_decode($tmp['response'], true);
                     	$w_id = str_replace('/wanguard-api/v1/bgp_announcements/', '', $tmp1['href']);
                     	if (intval($w_id) > 0) {
-                    		function_requirements('class.Wanguard');
                     		$deleted = Wanguard::delete($w_id);
                     		if ($deleted['status'] != 200) {
 		            			myadmin_log('myadmin', 'info', 'Unable to delete wangaurdID -'.$w_id.' Scrub IP. ServiceId - '.$serviceClass->getId(), __LINE__, __FILE__);
