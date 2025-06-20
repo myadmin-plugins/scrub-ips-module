@@ -2,6 +2,7 @@
 
 namespace Ganesh\MyadminScrubIps;
 
+use MyAdmin\scrub_ips\Wanguard;
 use Symfony\Component\EventDispatcher\GenericEvent;
 
 /**
@@ -102,7 +103,6 @@ class Plugin
                 $settings = get_module_settings(self::$module);
                 $serviceTypes = run_event('get_service_types', false, self::$module);
                 myadmin_log(self::$module, 'info', self::$name.' Activation', __LINE__, __FILE__, self::$module, $serviceInfo[$settings['PREFIX'].'_id']);
-                function_requirements('class.Wanguard');
                 $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip']);
                 if ($response['status'] == 201) {
                 	$extra = json_encode($response, true);
