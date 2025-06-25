@@ -66,8 +66,8 @@ class Plugin
         myadmin_log(self::$module, 'info', self::$name.' Deactivation', __LINE__, __FILE__, self::$module, $serviceClass->getId());
         if ($serviceTypes[$serviceClass->getType()]['services_type'] == get_service_define('SCRUB_IPS')) {
         	$service_extra = $serviceClass->getExtra();
-            if (!empty($serviceClass->getExtra())) {
-            	$tmp = json_decode($serviceClass->getExtra(), true);
+            if (!empty($service_extra)) {
+            	$tmp = json_decode($service_extra, true);
             	$tmp1 = json_decode($tmp['response'], true);
             	$w_id = str_replace('/wanguard-api/v1/bgp_announcements/', '', $tmp1['href']);
             	if (intval($w_id) > 0) {
@@ -81,7 +81,9 @@ class Plugin
 		                $email = $smarty->fetch('email/admin/deactivate_error.tpl');
 		                $subject = 'ScrubIps Deactivation error ID';
 		                (new \MyAdmin\Mail())->adminMail($subject, $email, false, 'admin/deactivate_error.tpl');
-            		}
+            		} else {
+                        $serviceClass->setExtra('')->save();
+                    }
             	}
             }
         }
@@ -104,9 +106,12 @@ class Plugin
                 myadmin_log(self::$module, 'info', self::$name.' Activation', __LINE__, __FILE__, self::$module, $serviceInfo[$settings['PREFIX'].'_id']);
                 $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip']);
                 if ($response['status'] == 201) {
-                	$extra = json_encode($response, true);
-                	$db = get_module_db(self::$module);
-	                $db->query("UPDATE {$settings['TABLE']} SET {$settings['PREFIX']}_status='active',{$settings['PREFIX']}_extra = '$extra' WHERE {$settings['PREFIX']}_id='".$serviceInfo[$settings['PREFIX'].'_id']."'", __LINE__, __FILE__);
+                	$extra = json_encode($response);
+                    $class = '\\MyAdmin\\Orm\\'.get_orm_class_from_table($settings['TABLE']);
+                    /** @var \MyAdmin\Orm\Product $class **/
+                    $serviceClass = new $class();
+                    $serviceClass->load_real($serviceInfo[$settings['PREFIX'].'_id']);
+                    $serviceClass->setStatus('active')->setExtra($extra)->save();
 	                myadmin_log('myadmin', 'info', 'Scrub IP Activated. ServiceId - '.$serviceInfo[$settings['PREFIX'].'_id'], __LINE__, __FILE__);
 	            } else {
 	            	myadmin_log('myadmin', 'info', 'Unable to activate Scrub IP. ServiceId - '.$serviceInfo[$settings['PREFIX'].'_id'], __LINE__, __FILE__);
@@ -118,9 +123,12 @@ class Plugin
                 if ($serviceTypes[$serviceInfo[$settings['PREFIX'].'_type']]['services_type'] == get_service_define('SCRUB_IPS')) {
                 	$response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip']);
                 	if ($response['status'] == 201) {
-                		$extra = json_encode($response, true);
-		                $db = get_module_db(self::$module);
-		                $db->query("UPDATE {$settings['TABLE']} SET {$settings['PREFIX']}_status='active',{$settings['PREFIX']}_extra = '$extra' WHERE {$settings['PREFIX']}_id='".$serviceInfo[$settings['PREFIX'].'_id']."'", __LINE__, __FILE__);
+                		$extra = json_encode($response);
+                        $class = '\\MyAdmin\\Orm\\'.get_orm_class_from_table($settings['TABLE']);
+                        /** @var \MyAdmin\Orm\Product $class **/
+                        $serviceClass = new $class();
+                        $serviceClass->load_real($serviceInfo[$settings['PREFIX'].'_id']);
+                        $serviceClass->setStatus('active')->setExtra($extra)->save();
 		                $GLOBALS['tf']->history->add($settings['TABLE'], 'change_status', 'active', $serviceInfo[$settings['PREFIX'].'_id'], $serviceInfo[$settings['PREFIX'].'_custid']);
 		                $smarty = new \TFSmarty();
 		                $smarty->assign('backup_name', $serviceTypes[$serviceInfo[$settings['PREFIX'].'_type']]['services_name']);
@@ -148,7 +156,6 @@ class Plugin
                     /** @var \MyAdmin\Orm\Product $class **/
                     $serviceClass = new $class();
                     $serviceClass->load_real($serviceInfo[$settings['PREFIX'].'_id']);
-                    $db = get_module_db(self::$module);
                     $serviceClass->setStatus('canceled')->save();
                     $GLOBALS['tf']->history->add($settings['TABLE'], 'change_status', 'canceled', $serviceInfo[$settings['PREFIX'].'_id'], $serviceInfo[$settings['PREFIX'].'_custid']);
                     if (!empty($serviceInfo[$settings['PREFIX'].'_extra'])) {
