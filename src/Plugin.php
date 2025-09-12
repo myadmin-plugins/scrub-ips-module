@@ -104,7 +104,8 @@ class Plugin
                 $settings = get_module_settings(self::$module);
                 $serviceTypes = run_event('get_service_types', false, self::$module);
                 myadmin_log(self::$module, 'info', self::$name.' Activation', __LINE__, __FILE__, self::$module, $serviceInfo[$settings['PREFIX'].'_id']);
-                $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip']);
+                $getRegion = get_ip_region($serviceInfo[$settings['PREFIX'].'_ip']);
+                $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['id'] ?? 2, 4, '', 'from my by ScrubIp Activation');
                 if ($response['status'] == 201) {
                 	$extra = json_encode($response);
                     $class = '\\MyAdmin\\Orm\\'.get_orm_class_from_table($settings['TABLE']);
@@ -121,7 +122,8 @@ class Plugin
                 $serviceTypes = run_event('get_service_types', false, self::$module);
                 $settings = get_module_settings(self::$module);
                 if ($serviceTypes[$serviceInfo[$settings['PREFIX'].'_type']]['services_type'] == get_service_define('SCRUB_IPS')) {
-                	$response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip']);
+                    $getRegion = get_ip_region($serviceInfo[$settings['PREFIX'].'_ip']);
+                    $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['id'] ?? 2, 4, '', 'from my by ScrubIp Reactivation');
                 	if ($response['status'] == 201) {
                 		$extra = json_encode($response);
                         $class = '\\MyAdmin\\Orm\\'.get_orm_class_from_table($settings['TABLE']);
@@ -163,7 +165,8 @@ class Plugin
                     	$tmp1 = json_decode($tmp['response'], true);
                     	$w_id = str_replace('/wanguard-api/v1/bgp_announcements/', '', $tmp1['href']);
                     	if (intval($w_id) > 0) {
-                    		$deleted = Wanguard::delete($w_id);
+                            $getRegion = get_ip_region($serviceInfo[$settings['PREFIX'].'_ip']);
+                            $deleted = Wanguard::delete($w_id, $getRegion['id'] ?? 2);
                     		if ($deleted['status'] != 200) {
 		            			myadmin_log('myadmin', 'info', 'Unable to delete wangaurdID -'.$w_id.' Scrub IP. ServiceId - '.$serviceClass->getId(), __LINE__, __FILE__);
 		            			$smarty = new \TFSmarty();
