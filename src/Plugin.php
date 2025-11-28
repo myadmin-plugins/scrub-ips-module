@@ -105,7 +105,17 @@ class Plugin
                 $serviceTypes = run_event('get_service_types', false, self::$module);
                 myadmin_log(self::$module, 'info', self::$name.' Activation', __LINE__, __FILE__, self::$module, $serviceInfo[$settings['PREFIX'].'_id']);
                 $getRegion = get_ip_region($serviceInfo[$settings['PREFIX'].'_ip']);
-                $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['id'] ?? 2, 4, '', 'from my by ScrubIp Activation');
+                $wanguard = Wanguard::getAnnouncementByIp($ip, $getRegion['id'] ?? 2);
+                if (!empty($wanguard) && $wanguard['status'] == 'Active') {
+                    $response = [
+                        'status' => '201',
+                        'response' => [
+                            "href" => "/wanguard-api/v1/bgp_announcements/{$wanguard['announcement_id']}"
+                        ]
+                    ];
+                } else {
+                    $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['id'] ?? 2, 4, '', 'from my by ScrubIp Activation');
+                }
                 if ($response['status'] == 201) {
                 	$extra = json_encode($response);
                     $class = '\\MyAdmin\\Orm\\'.get_orm_class_from_table($settings['TABLE']);
@@ -116,7 +126,7 @@ class Plugin
 	                myadmin_log('myadmin', 'info', 'Scrub IP Activated. ServiceId - '.$serviceInfo[$settings['PREFIX'].'_id'], __LINE__, __FILE__);
 	            } else {
 	            	myadmin_log('myadmin', 'info', 'Unable to activate Scrub IP. ServiceId - '.$serviceInfo[$settings['PREFIX'].'_id'], __LINE__, __FILE__);
-                    myadmin_log('myadmin', 'debug', 'ScrubIP Response - '.json_encode($response, true), __LINE__, __FILE__);
+                    myadmin_log('myadmin', 'debug', 'ScrubIP Response - '.json_encode($response), __LINE__, __FILE__);
 	            }
             })->setReactivate(function ($service) {
             	$serviceInfo = $service->getServiceInfo();
@@ -124,7 +134,17 @@ class Plugin
                 $settings = get_module_settings(self::$module);
                 if ($serviceTypes[$serviceInfo[$settings['PREFIX'].'_type']]['services_type'] == get_service_define('SCRUB_IPS')) {
                     $getRegion = get_ip_region($serviceInfo[$settings['PREFIX'].'_ip']);
-                    $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['id'] ?? 2, 4, '', 'from my by ScrubIp Reactivation');
+                    $wanguard = Wanguard::getAnnouncementByIp($ip, $getRegion['id'] ?? 2);
+                    if (!empty($wanguard) && $wanguard['status'] == 'Active') {
+                        $response = [
+                            'status' => '201',
+                            'response' => [
+                                "href" => "/wanguard-api/v1/bgp_announcements/{$wanguard['announcement_id']}"
+                            ]
+                        ];
+                    } else {
+                        $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['id'] ?? 2, 4, '', 'from my by ScrubIp Reactivation');
+                    }
                 	if ($response['status'] == 201) {
                 		$extra = json_encode($response);
                         $class = '\\MyAdmin\\Orm\\'.get_orm_class_from_table($settings['TABLE']);
@@ -141,7 +161,7 @@ class Plugin
 		                myadmin_log('myadmin', 'info', 'Scrub IP re-activated. ServiceId - '.$serviceInfo[$settings['PREFIX'].'_id'], __LINE__, __FILE__);
 		            } else {
 		            	myadmin_log('myadmin', 'info', 'Unable to re-activate Scrub IP. ServiceId - '.$serviceInfo[$settings['PREFIX'].'_id'], __LINE__, __FILE__);
-                        myadmin_log('myadmin', 'debug', 'ScrubIP Response - '.json_encode($response, true), __LINE__, __FILE__);
+                        myadmin_log('myadmin', 'debug', 'ScrubIP Response - '.json_encode($response), __LINE__, __FILE__);
 		            }
 	            }
             })->setDisable(function ($service) {
