@@ -116,6 +116,7 @@ class Plugin
 	                myadmin_log('myadmin', 'info', 'Scrub IP Activated. ServiceId - '.$serviceInfo[$settings['PREFIX'].'_id'], __LINE__, __FILE__);
 	            } else {
 	            	myadmin_log('myadmin', 'info', 'Unable to activate Scrub IP. ServiceId - '.$serviceInfo[$settings['PREFIX'].'_id'], __LINE__, __FILE__);
+                    myadmin_log('myadmin', 'debug', 'ScrubIP Response - '.json_encode($response, true), __LINE__, __FILE__);
 	            }
             })->setReactivate(function ($service) {
             	$serviceInfo = $service->getServiceInfo();
@@ -140,6 +141,7 @@ class Plugin
 		                myadmin_log('myadmin', 'info', 'Scrub IP re-activated. ServiceId - '.$serviceInfo[$settings['PREFIX'].'_id'], __LINE__, __FILE__);
 		            } else {
 		            	myadmin_log('myadmin', 'info', 'Unable to re-activate Scrub IP. ServiceId - '.$serviceInfo[$settings['PREFIX'].'_id'], __LINE__, __FILE__);
+                        myadmin_log('myadmin', 'debug', 'ScrubIP Response - '.json_encode($response, true), __LINE__, __FILE__);
 		            }
 	            }
             })->setDisable(function ($service) {
