@@ -105,7 +105,7 @@ class Plugin
                 $serviceTypes = run_event('get_service_types', false, self::$module);
                 myadmin_log(self::$module, 'info', self::$name.' Activation', __LINE__, __FILE__, self::$module, $serviceInfo[$settings['PREFIX'].'_id']);
                 $getRegion = get_ip_region($serviceInfo[$settings['PREFIX'].'_ip']);
-                $wanguard = Wanguard::getAnnouncementByIp($ip, $getRegion['id'] ?? 2);
+                $wanguard = Wanguard::getAnnouncementByIp($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['id'] ?? 2);
                 if (!empty($wanguard) && $wanguard['status'] == 'Active') {
                     $response = [
                         'status' => '201',
@@ -134,7 +134,7 @@ class Plugin
                 $settings = get_module_settings(self::$module);
                 if ($serviceTypes[$serviceInfo[$settings['PREFIX'].'_type']]['services_type'] == get_service_define('SCRUB_IPS')) {
                     $getRegion = get_ip_region($serviceInfo[$settings['PREFIX'].'_ip']);
-                    $wanguard = Wanguard::getAnnouncementByIp($ip, $getRegion['id'] ?? 2);
+                    $wanguard = Wanguard::getAnnouncementByIp($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['id'] ?? 2);
                     if (!empty($wanguard) && $wanguard['status'] == 'Active') {
                         $response = [
                             'status' => '201',
