@@ -108,10 +108,8 @@ class Plugin
                 $wanguard = Wanguard::getAnnouncementByIp($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['id'] ?? 2);
                 if (!empty($wanguard) && $wanguard['status'] == 'Active') {
                     $response = [
-                        'status' => '201',
-                        'response' => [
-                            "href" => "/wanguard-api/v1/bgp_announcements/{$wanguard['announcement_id']}"
-                        ]
+                        'status' => 201,
+                        'response' => json_encode(["href" => "/wanguard-api/v1/bgp_announcements/{$wanguard['announcement_id']}"])
                     ];
                 } else {
                     $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['id'] ?? 2, 4, '', 'from my by ScrubIp Activation');
@@ -137,10 +135,8 @@ class Plugin
                     $wanguard = Wanguard::getAnnouncementByIp($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['id'] ?? 2);
                     if (!empty($wanguard) && $wanguard['status'] == 'Active') {
                         $response = [
-                            'status' => '201',
-                            'response' => [
-                                "href" => "/wanguard-api/v1/bgp_announcements/{$wanguard['announcement_id']}"
-                            ]
+                            'status' => 201,
+                            'response' => json_encode(["href" => "/wanguard-api/v1/bgp_announcements/{$wanguard['announcement_id']}"])
                         ];
                     } else {
                         $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['id'] ?? 2, 4, '', 'from my by ScrubIp Reactivation');
