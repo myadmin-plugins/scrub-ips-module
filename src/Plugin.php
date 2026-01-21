@@ -105,14 +105,16 @@ class Plugin
                 $serviceTypes = run_event('get_service_types', false, self::$module);
                 myadmin_log(self::$module, 'info', self::$name.' Activation', __LINE__, __FILE__, self::$module, $serviceInfo[$settings['PREFIX'].'_id']);
                 $getRegion = get_ip_region($serviceInfo[$settings['PREFIX'].'_ip']);
-                $wanguard = Wanguard::getAnnouncementByIp($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['id'] ?? 2);
+                $wanguard = Wanguard::getAnnouncementByIp($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['region_id'] ?? 2);
                 if (!empty($wanguard) && $wanguard['status'] == 'Active') {
                     $response = [
                         'status' => 201,
                         'response' => json_encode(["href" => "/wanguard-api/v1/bgp_announcements/{$wanguard['announcement_id']}"])
                     ];
+                    myadmin_log('myadmin', 'info', 'Scrub IP exsiting bgp_announcement Id - '.$wanguard['announcement_id'], __LINE__, __FILE__);
                 } else {
-                    $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['id'] ?? 2, 4, '', 'from my by ScrubIp Activation');
+                    $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['region_id'] ?? 2, 4, '', 'from my by ScrubIp Activation');
+                    myadmin_log('myadmin', 'info', 'Scrub IP new bgp_announcement', __LINE__, __FILE__);
                 }
                 if ($response['status'] == 201) {
                 	$extra = json_encode($response);
@@ -132,14 +134,16 @@ class Plugin
                 $settings = get_module_settings(self::$module);
                 if ($serviceTypes[$serviceInfo[$settings['PREFIX'].'_type']]['services_type'] == get_service_define('SCRUB_IPS')) {
                     $getRegion = get_ip_region($serviceInfo[$settings['PREFIX'].'_ip']);
-                    $wanguard = Wanguard::getAnnouncementByIp($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['id'] ?? 2);
+                    $wanguard = Wanguard::getAnnouncementByIp($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['region_id'] ?? 2);
                     if (!empty($wanguard) && $wanguard['status'] == 'Active') {
                         $response = [
                             'status' => 201,
                             'response' => json_encode(["href" => "/wanguard-api/v1/bgp_announcements/{$wanguard['announcement_id']}"])
                         ];
+                        myadmin_log('myadmin', 'info', 'Scrub IP exsiting bgp_announcement Id - '.$wanguard['announcement_id'], __LINE__, __FILE__);
                     } else {
-                        $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['id'] ?? 2, 4, '', 'from my by ScrubIp Reactivation');
+                        $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['region_id'] ?? 2, 4, '', 'from my by ScrubIp Reactivation');
+                        myadmin_log('myadmin', 'info', 'Scrub IP new bgp_announcement', __LINE__, __FILE__);
                     }
                 	if ($response['status'] == 201) {
                 		$extra = json_encode($response);
@@ -184,7 +188,7 @@ class Plugin
                     	$w_id = str_replace('/wanguard-api/v1/bgp_announcements/', '', $tmp1['href']);
                     	if (intval($w_id) > 0) {
                             $getRegion = get_ip_region($serviceInfo[$settings['PREFIX'].'_ip']);
-                            $deleted = Wanguard::delete($w_id, $getRegion['id'] ?? 2);
+                            $deleted = Wanguard::delete($w_id, $getRegion['region_id'] ?? 2);
                     		if ($deleted['status'] != 200) {
 		            			myadmin_log('myadmin', 'info', 'Unable to delete wangaurdID -'.$w_id.' Scrub IP. ServiceId - '.$serviceClass->getId(), __LINE__, __FILE__);
 		            			$smarty = new \TFSmarty();
