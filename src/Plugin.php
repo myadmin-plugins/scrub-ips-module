@@ -113,7 +113,8 @@ class Plugin
                     ];
                     myadmin_log('myadmin', 'info', 'Scrub IP exsiting bgp_announcement Id - '.$wanguard['announcement_id'], __LINE__, __FILE__);
                 } else {
-                    $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['region_id'] ?? 2, 4, '', 'from my by ScrubIp Activation');
+                    $type = Wanguard::getConnectorId($getRegion['region_id']);
+                    $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['region_id'] ?? 2, $type, '', 'from my by ScrubIp Activation');
                     myadmin_log('myadmin', 'info', 'Scrub IP new bgp_announcement', __LINE__, __FILE__);
                 }
                 if ($response['status'] == 201) {
@@ -142,7 +143,8 @@ class Plugin
                         ];
                         myadmin_log('myadmin', 'info', 'Scrub IP exsiting bgp_announcement Id - '.$wanguard['announcement_id'], __LINE__, __FILE__);
                     } else {
-                        $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['region_id'] ?? 2, 4, '', 'from my by ScrubIp Reactivation');
+                        $type = Wanguard::getConnectorId($getRegion['region_id']);
+                        $response = Wanguard::add($serviceInfo[$settings['PREFIX'].'_ip'], $getRegion['region_id'] ?? 2, $type, '', 'from my by ScrubIp Reactivation');
                         myadmin_log('myadmin', 'info', 'Scrub IP new bgp_announcement', __LINE__, __FILE__);
                     }
                 	if ($response['status'] == 201) {
