@@ -154,7 +154,7 @@ class Plugin
                         $serviceClass = new $class();
                         $serviceClass->load_real($serviceInfo[$settings['PREFIX'].'_id']);
                         $serviceClass->setStatus('active')->setExtra($extra)->save();
-		                $GLOBALS['tf']->history->add($settings['TABLE'], 'change_status', 'active', $serviceInfo[$settings['PREFIX'].'_id'], $serviceInfo[$settings['PREFIX'].'_custid']);
+		                \MyAdmin\App::history()->add($settings['TABLE'], 'change_status', 'active', $serviceInfo[$settings['PREFIX'].'_id'], $serviceInfo[$settings['PREFIX'].'_custid']);
 		                $smarty = new \TFSmarty();
 		                $smarty->assign('backup_name', $serviceTypes[$serviceInfo[$settings['PREFIX'].'_type']]['services_name']);
 		                $email = $smarty->fetch('email/admin/backup_reactivated.tpl');
@@ -183,7 +183,7 @@ class Plugin
                     $serviceClass = new $class();
                     $serviceClass->load_real($serviceInfo[$settings['PREFIX'].'_id']);
                     $serviceClass->setStatus('canceled')->save();
-                    $GLOBALS['tf']->history->add($settings['TABLE'], 'change_status', 'canceled', $serviceInfo[$settings['PREFIX'].'_id'], $serviceInfo[$settings['PREFIX'].'_custid']);
+                    \MyAdmin\App::history()->add($settings['TABLE'], 'change_status', 'canceled', $serviceInfo[$settings['PREFIX'].'_id'], $serviceInfo[$settings['PREFIX'].'_custid']);
                     if (!empty($serviceInfo[$settings['PREFIX'].'_extra'])) {
                     	$tmp = json_decode($serviceInfo[$settings['PREFIX'].'_extra'], true);
                     	$tmp1 = json_decode($tmp['response'], true);
