@@ -218,5 +218,9 @@ class Plugin
         $settings = $event->getSubject();
         $settings->setTarget('global');
         $settings->add_text_setting(self::$module, _('SCRUB_ENDPOINT'), 'scrub_endpoint', _('Scrub URL'), _('Scrub URL'), $settings->get_setting('SCRUB_ENDPOINT'));
+        $settings->add_text_setting(self::$module, _('SCRUBLOGS'), 'scrublogs_ip', _('Scrub Logs IP'), _('Scrub Logs IP'), $settings->get_setting('SCRUBLOGS_IP'));
+        $settings->add_text_setting(self::$module, _('SCRUBLOGS'), 'scrublogs_port', _('Scrub Logs Port'), _('Scrub Logs Port'), $settings->get_setting('SCRUBLOGS_PORT'));
+        $settings->add_text_setting(self::$module, _('SCRUBLOGS'), 'scrublogs_user', _('Scrub Logs User'), _('Scrub Logs User'), $settings->get_setting('SCRUBLOGS_USER'));
+        $settings->add_password_setting(self::$module, _('SCRUBLOGS'), 'scrublogs_password', _('Scrub Logs Password'), _('Scrub Logs Password'), $settings->get_setting('SCRUBLOGS_PASSWORD'));
     }
 }
