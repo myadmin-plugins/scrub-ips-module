@@ -199,20 +199,28 @@ class Plugin
     }
 
     /**
-     * Deletes every scrub firewall rule, geo firewall rule, firewall list rule and
-     * filter listed for a canceled scrub ip.
+     * Deletes every scrub firewall rule, firewall list rule, filter and geo firewall
+     * rule listed for a canceled scrub ip.
      *
      * Runs from getDeactivate() only for the cancel (not the expiry) of a service that
      * was not already canceled and whose ip no other service holds
-     * (scrubCleanupAllowed()), and from cleanupReleasedIp() on terminate. Each list is
-     * asked for by this ip and every entry is deleted one by one through the same
-     * per-id calls the client pages use; an entry whose destination is not this ip is
-     * left alone. It never throws and never stops the cancel: a failure is logged and
-     * posted to chat for staff to finish by hand.
+     * (scrubCleanupAllowed()), and from cleanupReleasedIp() on terminate. Each kind is
+     * listed for this ip and every entry is deleted one by one through the same per-id
+     * calls the client pages use; an entry whose destination is not this ip is left
+     * alone. It never throws and never stops the cancel: a failure is logged and posted
+     * to chat for staff to finish by hand. The first exception from the scrub api (it
+     * throws when the host cannot be reached or times out) stops the cleanup, so an
+     * unreachable host costs one timeout, not one per call; the kinds not reached are
+     * named in the report.
+     *
+     * The scrub api no longer serves a geo rule listing (/geo-firewall/rules/daddr/{ip}
+     * and every other geo GET answer 404 since the early november 2026 api update), so
+     * a geo listing that is not a list is reported on its own as "could not be
+     * listed/verified" and does not make the other kinds' cleanup unfinished.
      *
      * @param int|string $serviceId scrub ip service id (for the logs)
      * @param string     $ip        the scrub ip
-     * @return bool true when everything listed was deleted
+     * @return bool true when everything listed was deleted (geo rules that could not be listed are only warned about)
      */
     public static function cleanupScrub($serviceId, $ip)
     {
@@ -227,19 +235,40 @@ class Plugin
         $deleted = 0;
         $failed = [];
         $skipped = [];
+        $geoUnverified = null;
+        $kinds = ['firewall rules', 'firewall lists', 'filters', 'geo firewall rules'];
+        $kind = 'scrub api client';
         try {
             $scrub = self::$scrubFactory !== null ? call_user_func(self::$scrubFactory) : \MyAdmin\scrub_ips\Scrub::class;
-            // firewall rules: [{id, destination_ip, ...}], deleted with "ok"
-            self::deleteListed($scrub, 'firewall rule', 'firewallListByIp', 'firewallDelete', 'destination_ip', $bpf, $deleted, $failed, $skipped);
-            // geo firewall rules: [{id, daddr, ...}]
-            self::deleteListed($scrub, 'geo firewall rule', 'geoFirewallListByIp', 'geoFirewallDelete', 'daddr', $bpf, $deleted, $failed, $skipped);
-            // firewall list rules: [{id, daddr, dport, ...}]
-            self::deleteListed($scrub, 'firewall list', 'firewallListsByIp', 'firewallListDelete', 'daddr', $bpf, $deleted, $failed, $skipped);
-            // filters: [{filter_name, daddr, dest}], no id: deleted by type + daddr/dest
-            self::deleteFilters($scrub, $bpf, $deleted, $failed, $skipped);
+            foreach ($kinds as $kind) {
+                $listing = null;
+                if ($kind === 'firewall rules') {
+                    // [{id, destination_ip, ...}], deleted with "ok"
+                    $listed = self::deleteListed($scrub, 'firewall rule', 'firewallListByIp', 'firewallDelete', 'destination_ip', $bpf, $deleted, $failed, $skipped, $listing);
+                } elseif ($kind === 'firewall lists') {
+                    // [{id, daddr, dport, ...}], deleted with "ok" or the rule back
+                    $listed = self::deleteListed($scrub, 'firewall list', 'firewallListsByIp', 'firewallListDelete', 'daddr', $bpf, $deleted, $failed, $skipped, $listing);
+                } elseif ($kind === 'filters') {
+                    // [{filter_name, daddr, dest}], no id: deleted by type + daddr/dest
+                    $listed = self::deleteFilters($scrub, $bpf, $deleted, $failed, $skipped, $listing);
+                } else {
+                    // [{id, daddr, ...}] while the api served it
+                    $listed = self::deleteListed($scrub, 'geo firewall rule', 'geoFirewallListByIp', 'geoFirewallDelete', 'daddr', $bpf, $deleted, $failed, $skipped, $listing);
+                }
+                if (!$listed) {
+                    if ($kind === 'geo firewall rules') {
+                        $geoUnverified = $listing;
+                    } else {
+                        $failed[] = $kind.': listing failed ('.$listing.')';
+                    }
+                }
+            }
         } catch (\Throwable $e) {
-            $failed[] = get_class($e).': '.$e->getMessage();
+            $rest = array_slice($kinds, (int) array_search($kind, $kinds, true) + 1);
+            $failed[] = $kind.': '.get_class($e).': '.$e->getMessage().' - stopped there'
+                .($kind !== 'scrub api client' && !empty($rest) ? ', not checked: '.implode(', ', $rest) : '');
         }
+        $geoNote = $geoUnverified !== null ? 'its geo firewall rules could not be listed/verified (the scrub api answered '.$geoUnverified.' to the geo listing)' : '';
         if (!empty($skipped)) {
             // listed for this ip but naming another destination: leave it, but tell staff
             myadmin_log(self::$module, 'warning', 'Scrub cleanup for scrub ip '.$serviceId.' ('.$ip.') left '.implode('; ', $skipped), __LINE__, __FILE__, self::$module, $serviceId);
@@ -247,31 +276,33 @@ class Plugin
         }
         if (empty($failed)) {
             myadmin_log(self::$module, 'info', 'Scrub cleanup for scrub ip '.$serviceId.' ('.$ip.') removed '.$deleted.' rule(s)/filter(s)', __LINE__, __FILE__, self::$module, $serviceId);
+            if ($geoNote !== '') {
+                myadmin_log(self::$module, 'warning', 'Scrub cleanup for scrub ip '.$serviceId.' ('.$ip.'): '.$geoNote, __LINE__, __FILE__, self::$module, $serviceId);
+                chatNotify($label.' canceled: its firewall rules, firewall lists and filters were cleaned up ('.$deleted.' removed), but '.$geoNote.' - please check its geo rules by hand', 'notifications');
+            }
             return true;
         }
-        myadmin_log(self::$module, 'error', 'Scrub cleanup for scrub ip '.$serviceId.' ('.$ip.') removed '.$deleted.', failed: '.implode('; ', $failed), __LINE__, __FILE__, self::$module, $serviceId);
-        chatNotify($label.' canceled but its scrub cleanup did not finish ('.$deleted.' removed; '.implode('; ', $failed).') - please remove what is left by hand', 'notifications');
+        myadmin_log(self::$module, 'error', 'Scrub cleanup for scrub ip '.$serviceId.' ('.$ip.') removed '.$deleted.', failed: '.implode('; ', $failed).($geoNote !== '' ? '; '.$geoNote : ''), __LINE__, __FILE__, self::$module, $serviceId);
+        chatNotify($label.' canceled but its scrub cleanup did not finish ('.$deleted.' removed; '.implode('; ', $failed).')'.($geoNote !== '' ? '; also '.$geoNote : '').' - please remove what is left by hand', 'notifications');
         return false;
     }
 
     /**
      * Lists one kind of id-keyed scrub entry for the ip and deletes each one that names it.
-     * A failed listing or delete is added to $failed, a mismatched entry to $skipped.
+     * A refused delete is added to $failed, a mismatched entry to $skipped. An exception
+     * from the scrub api is not caught: cleanupScrub() stops on it.
      *
      * @param object|string $scrub
+     * @param string|null   $listing set to a short form of the listing when it was not a list
+     * @return bool false when the listing was not a list (nothing was deleted)
      */
-    private static function deleteListed($scrub, $kind, $listMethod, $deleteMethod, $destinationField, $bpf, &$deleted, array &$failed, array &$skipped)
+    private static function deleteListed($scrub, $kind, $listMethod, $deleteMethod, $destinationField, $bpf, &$deleted, array &$failed, array &$skipped, &$listing)
     {
-        try {
-            $list = call_user_func([$scrub, $listMethod], $bpf);
-        } catch (\Throwable $e) {
-            $failed[] = $kind.'s: listing failed ('.$e->getMessage().')';
-            return;
-        }
+        $list = call_user_func([$scrub, $listMethod], $bpf);
         $rows = self::listedRows($list);
         if ($rows === null) {
-            $failed[] = $kind.'s: listing failed ('.substr((string) json_encode($list), 0, 200).')';
-            return;
+            $listing = substr((string) json_encode($list), 0, 200);
+            return false;
         }
         foreach ($rows as $row) {
             $id = isset($row['id']) && is_scalar($row['id']) ? (int) $row['id'] : 0;
@@ -283,40 +314,34 @@ class Plugin
                 $skipped[] = $kind.' '.$id.' ('.$destinationField.' '.json_encode($destination).')';
                 continue;
             }
-            try {
-                $response = call_user_func([$scrub, $deleteMethod], $id);
-            } catch (\Throwable $e) {
-                $failed[] = $kind.' '.$id.': '.$e->getMessage();
-                continue;
-            }
+            $response = call_user_func([$scrub, $deleteMethod], $id);
             if (self::deleteOk($response)) {
                 $deleted++;
             } else {
                 $failed[] = $kind.' '.$id.': '.json_encode($response);
             }
         }
+        return true;
     }
 
     /**
-     * Lists the filters for the ip and deletes each one that names it.
+     * Lists the filters for the ip and deletes each one that names it. An exception
+     * from the scrub api is not caught: cleanupScrub() stops on it.
      *
      * @param object|string $scrub
+     * @param string|null   $listing set to a short form of the listing when it was not a list
+     * @return bool false when the listing was not a list (nothing was deleted)
      */
-    private static function deleteFilters($scrub, $bpf, &$deleted, array &$failed, array &$skipped)
+    private static function deleteFilters($scrub, $bpf, &$deleted, array &$failed, array &$skipped, &$listing)
     {
-        try {
-            $list = call_user_func([$scrub, 'filterListAll'], ['daddr' => $bpf]);
-        } catch (\Throwable $e) {
-            $failed[] = 'filters: listing failed ('.$e->getMessage().')';
-            return;
-        }
+        $list = call_user_func([$scrub, 'filterListAll'], ['daddr' => $bpf]);
         $rows = self::listedRows($list);
         if ($rows === null) {
-            $failed[] = 'filters: listing failed ('.substr((string) json_encode($list), 0, 200).')';
-            return;
+            $listing = substr((string) json_encode($list), 0, 200);
+            return false;
         }
         foreach ($rows as $row) {
-            $name = isset($row['filter_name']) && is_scalar($row['filter_name']) ? trim((string) $row['filter_name']) : '';
+            $name = isset($row['filter_name']) && is_scalar($row['filter_name']) ? (string) $row['filter_name'] : '';
             $daddr = isset($row['daddr']) && is_scalar($row['daddr']) ? trim((string) $row['daddr']) : '';
             $dest = isset($row['dest']) && is_scalar($row['dest']) ? trim((string) $row['dest']) : (isset($row['filtered_port']) && is_scalar($row['filtered_port']) ? trim((string) $row['filtered_port']) : '');
             $describe = 'filter '.json_encode($name).' port '.json_encode($dest);
@@ -333,18 +358,14 @@ class Plugin
             $request = $type === 'synproxy'
                 ? ['filtered_ip' => (int) $bpf, 'filtered_port' => (int) $dest]
                 : ['daddr' => (int) $bpf, 'dest' => (int) $dest];
-            try {
-                $response = call_user_func([$scrub, 'filterDeleteByType'], $type, $request);
-            } catch (\Throwable $e) {
-                $failed[] = $describe.': '.$e->getMessage();
-                continue;
-            }
+            $response = call_user_func([$scrub, 'filterDeleteByType'], $type, $request);
             if (self::deleteOk($response)) {
                 $deleted++;
             } else {
                 $failed[] = $describe.': '.json_encode($response);
             }
         }
+        return true;
     }
 
     /**
@@ -357,7 +378,7 @@ class Plugin
      */
     private static function filterRouteName($name)
     {
-        if (preg_match('/^[a-z0-9_]{1,64}$/', $name) !== 1) {
+        if (preg_match('/^[a-z0-9_]{1,64}\z/', $name) !== 1) {
             return '';
         }
         $first = explode('_', $name)[0];
@@ -389,7 +410,7 @@ class Plugin
     }
 
     /**
-     * Whether a scrub delete call succeeded: a bare "ok", or a success/status flag.
+     * Whether a scrub delete call succeeded: a bare "ok", the entry back (its id), or a success/status flag.
      *
      * @param mixed $response
      * @return bool
@@ -398,6 +419,10 @@ class Plugin
     {
         if (!is_array($response)) {
             return false;
+        }
+        if (isset($response['id'])) {
+            // a firewall list delete may answer with the rule itself (ViewScrubIp::listResponseOk())
+            return true;
         }
         if (isset($response[0]) && is_string($response[0]) && strtolower(trim($response[0])) === 'ok') {
             return true;

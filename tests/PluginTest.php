@@ -269,10 +269,11 @@ class PluginTest extends TestCase
     }
 
     /**
-     * A listing that is not a list (the scrub api's "404 page not found" page) is a
-     * failure for that kind only; the other kinds are still cleaned.
+     * The scrub api no longer serves a geo rule listing (every geo GET answers 404):
+     * that is reported on its own as geo rules that could not be listed/verified, and
+     * the other kinds still count as cleaned up.
      */
-    public function testAFailedListingIsReportedAndTheOtherKindsAreStillCleaned(): void
+    public function testAnUnlistableGeoListingIsItsOwnWarning(): void
     {
         $scrub = new ScrubDouble([
             'geoFirewallListByIp' => ["404 page not found\n"],
@@ -280,29 +281,94 @@ class PluginTest extends TestCase
         ]);
         $this->useScrub($scrub);
 
-        $this->dispatchDeactivate(self::SERVICE_TYPE);
+        $this->assertTrue(Plugin::cleanupScrub(4242, self::IP));
 
         $this->assertSame([['firewallDelete', 5]], $scrub->callsTo('firewallDelete'));
         $this->assertCount(1, FrameworkSpy::$notifications);
-        $this->assertStringContainsString('geo firewall rules: listing failed', FrameworkSpy::$notifications[0][0]);
-        $this->assertStringContainsString('404 page not found', FrameworkSpy::$notifications[0][0]);
+        $message = FrameworkSpy::$notifications[0][0];
+        $this->assertStringContainsString('geo firewall rules could not be listed/verified', $message);
+        $this->assertStringContainsString('404 page not found', $message);
+        $this->assertStringContainsString('1 removed', $message);
+        $this->assertStringNotContainsString('did not finish', $message);
+        $this->assertSame([], FrameworkSpy::logsWithLevel('error'));
+        $this->assertCount(1, FrameworkSpy::logsWithLevel('warning'));
     }
 
     /**
-     * An exception from the api (unreachable) is caught and reported.
+     * When another kind fails as well, the one hand-off message says the cleanup did
+     * not finish and still names the unverified geo rules.
      */
-    public function testAnUnreachableApiIsReportedAndDoesNotThrow(): void
+    public function testAFailureAndAnUnlistableGeoListingShareOneHandOff(): void
     {
         $this->useScrub(new ScrubDouble([
-            'firewallListByIp' => new \Exception('Connection Error: 7 - Failed to connect'),
+            'geoFirewallListByIp' => ["404 page not found\n"],
+            'firewallListsByIp' => ['error' => 'db down'],
+            'filterListAll' => [['filter_name' => 'dns', 'daddr' => (string) self::bpf(self::IP), 'dest' => '53']],
+        ]));
+
+        $this->assertFalse(Plugin::cleanupScrub(4242, self::IP));
+
+        $this->assertCount(1, $this->scrub->callsTo('filterDeleteByType'), 'a failed listing does not stop the other kinds');
+        $this->assertCount(1, FrameworkSpy::$notifications);
+        $message = FrameworkSpy::$notifications[0][0];
+        $this->assertStringContainsString('did not finish', $message);
+        $this->assertStringContainsString('firewall lists: listing failed', $message);
+        $this->assertStringContainsString('also its geo firewall rules could not be listed/verified', $message);
+    }
+
+    /**
+     * The first exception from the api (unreachable / timed out) stops the cleanup:
+     * one timeout, not one per call. The kinds not reached are named.
+     */
+    public function testAnUnreachableApiStopsTheCleanupAndIsReported(): void
+    {
+        $this->useScrub(new ScrubDouble([
+            'firewallListByIp' => new \Exception('Connection Error: 28 - Operation timed out'),
             'firewallListsByIp' => [['id' => 9, 'daddr' => self::bpf(self::IP)]],
         ]));
 
         $this->dispatchDeactivate(self::SERVICE_TYPE);
 
-        $this->assertSame([['firewallListDelete', 9]], $this->scrub->callsTo('firewallListDelete'));
+        $this->assertSame([['firewallListByIp', self::bpf(self::IP)]], $this->scrub->calls, 'nothing after the failed call');
         $this->assertCount(1, FrameworkSpy::$notifications);
+        $message = FrameworkSpy::$notifications[0][0];
+        $this->assertStringContainsString('timed out', $message);
+        $this->assertStringContainsString('not checked: firewall lists, filters, geo firewall rules', $message);
+    }
+
+    /**
+     * An exception from a delete stops the cleanup too.
+     */
+    public function testAnExceptionFromADeleteStopsTheCleanup(): void
+    {
+        $scrub = new ScrubDouble([
+            'firewallListByIp' => [['id' => 5, 'destination_ip' => self::bpf(self::IP)], ['id' => 6, 'destination_ip' => self::bpf(self::IP)]],
+            'firewallListsByIp' => [['id' => 9, 'daddr' => self::bpf(self::IP)]],
+        ]);
+        $scrub->deleteResponse = new \Exception('Connection Error: 7 - Failed to connect');
+        $this->useScrub($scrub);
+
+        $this->assertFalse(Plugin::cleanupScrub(4242, self::IP));
+
+        $this->assertSame([['firewallDelete', 5]], $scrub->callsTo('firewallDelete'));
+        $this->assertSame([], $scrub->callsTo('firewallListsByIp'));
         $this->assertStringContainsString('Failed to connect', FrameworkSpy::$notifications[0][0]);
+    }
+
+    /**
+     * A firewall list delete that answers with the rule itself (its id) succeeded, as
+     * the client firewall lists page counts it.
+     */
+    public function testAFirewallListDeleteAnsweringWithItsIdCounts(): void
+    {
+        $scrub = new ScrubDouble(['firewallListsByIp' => [['id' => 9, 'daddr' => self::bpf(self::IP)]]]);
+        $scrub->deleteResponse = ['id' => 9, 'daddr' => self::bpf(self::IP)];
+        $this->useScrub($scrub);
+
+        $this->assertTrue(Plugin::cleanupScrub(4242, self::IP));
+
+        $this->assertSame([['firewallListDelete', 9]], $scrub->callsTo('firewallListDelete'));
+        $this->assertSame([], FrameworkSpy::$notifications);
     }
 
     /**
@@ -315,6 +381,7 @@ class PluginTest extends TestCase
             'filterListAll' => [
                 ['filter_name' => '../firewall', 'daddr' => $bpf, 'dest' => '53'],
                 ['filter_name' => 'dns', 'daddr' => $bpf, 'dest' => '53; x'],
+                ['filter_name' => "dns\n", 'daddr' => $bpf, 'dest' => '53'],
             ],
         ]));
 

@@ -24,7 +24,7 @@ final class ScrubDouble
         'filterListAll' => [],
     ];
 
-    /** @var mixed answer of every delete */
+    /** @var mixed answer of every delete; a \Throwable is thrown instead */
     public $deleteResponse = ['ok'];
 
     /**
@@ -58,25 +58,25 @@ final class ScrubDouble
     public function firewallDelete(int $id)
     {
         $this->calls[] = ['firewallDelete', $id];
-        return $this->deleteResponse;
+        return $this->deleteAnswer();
     }
 
     public function geoFirewallDelete(int $id)
     {
         $this->calls[] = ['geoFirewallDelete', $id];
-        return $this->deleteResponse;
+        return $this->deleteAnswer();
     }
 
     public function firewallListDelete(int $id)
     {
         $this->calls[] = ['firewallListDelete', $id];
-        return $this->deleteResponse;
+        return $this->deleteAnswer();
     }
 
     public function filterDeleteByType(string $type, array $request)
     {
         $this->calls[] = ['filterDeleteByType', $type, $request];
-        return $this->deleteResponse;
+        return $this->deleteAnswer();
     }
 
     /**
@@ -89,6 +89,17 @@ final class ScrubDouble
         return array_values(array_filter($this->calls, static function (array $call) use ($method) {
             return $call[0] === $method;
         }));
+    }
+
+    /**
+     * @return mixed
+     */
+    private function deleteAnswer()
+    {
+        if ($this->deleteResponse instanceof \Throwable) {
+            throw $this->deleteResponse;
+        }
+        return $this->deleteResponse;
     }
 
     /**
