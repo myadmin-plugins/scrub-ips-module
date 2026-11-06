@@ -393,25 +393,21 @@ class PluginTest extends TestCase
     }
 
     /**
-     * Each listed filter goes to the route core's Scrub::filterRouteName() gives it
-     * (the mapping the filter pages and Scrub::filterCreate()/filterDelete() use since
-     * the scrub api stopped sending filter_uri): a route that carries an underscore
-     * (udp_adaptive, cs2_udp) is its own route, the rest route by their first part.
+     * Each listed filter goes only to the route it is mapped to (the same map as core's
+     * Scrub::FILTER_ROUTES; core's ScrubFilterRoutesTest checks the two are identical).
      */
-    public function testFiltersGoToTheSameRoutesAsCore(): void
+    public function testFiltersGoToTheirMappedRoutes(): void
     {
         $bpf = self::bpf(self::IP);
         $routes = [
-            'udp_adaptive' => 'udp_adaptive',
-            'cs2_udp' => 'cs2_udp',
-            'cs2' => 'cs2_udp',
-            'sip_udp' => 'genericsip',
-            'ue5_udp' => 'unrealengine5',
-            'raknet_udp' => 'raknet',
-            'genericsip' => 'genericsip',
-            'unrealengine5' => 'unrealengine5',
-            'palworld' => 'palworld',
-            'mcje' => 'mcje',
+            'openvpn' => 'openvpn', 'wireguard' => 'wireguard', 'dns' => 'dns', 'raknet' => 'raknet',
+            'scpsl' => 'scpsl', 'genericsip' => 'genericsip', 'fivem' => 'fivem', 'litenetlib' => 'litenetlib',
+            'sourcegengine' => 'sourcegengine', 'arma3reforger' => 'arma3reforger', 'conanexiles' => 'conanexiles',
+            'unrealengine5' => 'unrealengine5', 'synproxy' => 'synproxy',
+            'ue5' => 'unrealengine5', 'raknet_udp' => 'raknet', 'openvpn_udp' => 'openvpn',
+            'sip' => 'genericsip', 'sip_udp' => 'genericsip',
+            'adaptive' => 'udp_adaptive', 'adaptive_udp' => 'udp_adaptive', 'udp_adaptive' => 'udp_adaptive',
+            'cs2' => 'cs2_udp', 'cs2_udp' => 'cs2_udp', 'a2s_udp' => 'a2s',
         ];
         $listed = [];
         $port = 1000;
@@ -424,6 +420,37 @@ class PluginTest extends TestCase
 
         $this->assertSame(array_values($routes), array_column($this->scrub->callsTo('filterDeleteByType'), 1));
         $this->assertSame([], FrameworkSpy::$notifications);
+    }
+
+    /**
+     * A filter type with no route of its own is never sent to a sibling route: the api
+     * answers "ok" to any delete on a registered route, so fivem_strict sent to
+     * /filters/fivem/delete counted as removed while it stayed (and removed a plain
+     * fivem filter on the same port). It is handed to staff instead.
+     */
+    public function testAFilterTypeWithNoRouteIsHandedToStaff(): void
+    {
+        $bpf = (string) self::bpf(self::IP);
+        $this->useScrub(new ScrubDouble([
+            'filterListAll' => [
+                ['filter_name' => 'fivem_strict', 'daddr' => $bpf, 'dest' => '30120'],
+                ['filter_name' => 'fivem', 'daddr' => $bpf, 'dest' => '30120'],
+                ['filter_name' => 'synproxy_strict', 'daddr' => $bpf, 'dest' => '22'],
+                ['filter_name' => 'ue5_udp', 'daddr' => $bpf, 'dest' => '7777'],
+                ['filter_name' => 'palworld', 'daddr' => $bpf, 'dest' => '8211'],
+                ['filter_name' => 'mcje', 'daddr' => $bpf, 'dest' => '25565'],
+            ],
+        ]));
+
+        $this->dispatchDeactivate(self::SERVICE_TYPE);
+
+        $this->assertSame([['filterDeleteByType', 'fivem', ['daddr' => (int) $bpf, 'dest' => 30120]]],
+            $this->scrub->callsTo('filterDeleteByType'), 'only the plain fivem filter is sent');
+        $this->assertCount(1, FrameworkSpy::$notifications);
+        foreach (['fivem_strict', 'synproxy_strict', 'ue5_udp', 'palworld', 'mcje'] as $name) {
+            $this->assertStringContainsString('"' . $name . '"', FrameworkSpy::$notifications[0][0]);
+        }
+        $this->assertStringContainsString('not supported by the scrub api', FrameworkSpy::$notifications[0][0]);
     }
 
     /**

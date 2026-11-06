@@ -350,7 +350,12 @@ class Plugin
                 continue;
             }
             $type = self::filterRouteName($name);
-            if ($type === '' || !ctype_digit($dest)) {
+            if ($type === '') {
+                // never sent to a sibling route (fivem_strict is not fivem): staff remove it by hand
+                $failed[] = $describe.': filter type not supported by the scrub api, remove it by hand';
+                continue;
+            }
+            if (!ctype_digit($dest)) {
                 $failed[] = $describe.': unknown filter type or port';
                 continue;
             }
@@ -369,14 +374,51 @@ class Plugin
     }
 
     /**
-     * The delete route of a listed filter_name, the same mapping as core's
-     * Scrub::filterRouteName() (which the client filters pages and Scrub::filterCreate()
-     * / filterDelete() use): a route name that carries an underscore itself
-     * (udp_adaptive, cs2_udp) is its own route, any other name routes by the part
-     * before its first underscore, with the names whose route differs mapped by hand.
-     * '' when the name is not a plain one.
+     * Listed filter_name => api route (/filters/{route}/delete). Kept identical to core's
+     * Scrub::FILTER_ROUTES (core's ScrubFilterRoutesTest compares the two).
      *
-     * @param string $name
+     * The 13 routes interserver/Scrub registers are their own names. The aliases are
+     * only the listed names checked against the live api on 2026-11-06 (the row shows
+     * up in that route's /list for its ip: ue5, raknet_udp, openvpn_udp) and the ones
+     * the client filters page has always mapped by hand (sip, adaptive, cs2, a2s_udp;
+     * udp_adaptive, cs2_udp and a2s are not served by the api today, so those deletes
+     * get its "404 page not found" and are reported). Every other name, a
+     * <route>_<suffix> such as fivem_strict included, has no route: the api answers
+     * "ok" to a delete on any registered route, so sending it to a sibling route would
+     * count a filter as removed that stays (or remove the sibling's filter on that port).
+     */
+    private const FILTER_ROUTES = [
+        'openvpn' => 'openvpn',
+        'wireguard' => 'wireguard',
+        'dns' => 'dns',
+        'raknet' => 'raknet',
+        'scpsl' => 'scpsl',
+        'genericsip' => 'genericsip',
+        'fivem' => 'fivem',
+        'litenetlib' => 'litenetlib',
+        'sourcegengine' => 'sourcegengine',
+        'arma3reforger' => 'arma3reforger',
+        'conanexiles' => 'conanexiles',
+        'unrealengine5' => 'unrealengine5',
+        'synproxy' => 'synproxy',
+        'ue5' => 'unrealengine5',
+        'raknet_udp' => 'raknet',
+        'openvpn_udp' => 'openvpn',
+        'sip' => 'genericsip',
+        'sip_udp' => 'genericsip',
+        'adaptive' => 'udp_adaptive',
+        'adaptive_udp' => 'udp_adaptive',
+        'udp_adaptive' => 'udp_adaptive',
+        'cs2' => 'cs2_udp',
+        'cs2_udp' => 'cs2_udp',
+        'a2s_udp' => 'a2s',
+    ];
+
+    /**
+     * The delete route of a listed filter_name, the same explicit mapping as core's
+     * Scrub::filterRouteName(): '' for a name with no route (see FILTER_ROUTES).
+     *
+     * @param mixed $name
      * @return string
      */
     private static function filterRouteName($name)
@@ -384,12 +426,7 @@ class Plugin
         if (!is_string($name) || preg_match('/^[a-z0-9_]{1,64}\z/', $name) !== 1) {
             return '';
         }
-        if (in_array($name, ['udp_adaptive', 'cs2_udp'], true)) {
-            return $name;
-        }
-        $first = explode('_', $name)[0];
-        $map = ['adaptive' => 'udp_adaptive', 'cs2' => 'cs2_udp', 'sip' => 'genericsip', 'ue5' => 'unrealengine5'];
-        return $map[$first] ?? $first;
+        return self::FILTER_ROUTES[$name] ?? '';
     }
 
     /**
