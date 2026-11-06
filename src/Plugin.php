@@ -37,6 +37,21 @@ class Plugin
 	];
 
     /**
+     * Floating ip packages whose own page manages scrub firewall rules and filters for
+     * the floating ip (ViewFloatingIp::floatingIpScrubPackage(): 11545 Floating IP + Scrub;
+     * it also lists 11552). A live one of these on the same ip shares the rules.
+     */
+    public const FLOATING_SCRUB_SERVICE_TYPES = [11545, 11552];
+
+    /**
+     * Builds the Scrub API client for cleanupScrub(); tests swap in a double.
+     * @var callable|null fn(): object|string (an object or class name) with firewallListByIp(),
+     *      firewallDelete(), geoFirewallListByIp(), geoFirewallDelete(), firewallListsByIp(),
+     *      firewallListDelete(), filterListAll() and filterDeleteByType()
+     */
+    public static $scrubFactory = null;
+
+    /**
      * Plugin constructor.
      */
     public function __construct()
@@ -86,7 +101,320 @@ class Plugin
                     }
             	}
             }
+            $ip = (string) $serviceClass->getIp();
+            $newStatus = $event->hasArgument('new_status') ? (string) $event->getArgument('new_status') : '';
+            if ($newStatus === 'expired') {
+                // expiry keeps the ip with the customer and a paid invoice reactivates the service
+                // (setEnable/setReactivate re-announce the same ip), so the rules stay for that
+                myadmin_log(self::$module, 'info', 'Scrub cleanup skipped for scrub ip '.$serviceClass->getId().': it is expiring, its rules stay for a renewal', __LINE__, __FILE__, self::$module, $serviceClass->getId());
+            } elseif (self::scrubCleanupAllowed($serviceClass, $ip, get_module_db(self::$module))) {
+                // the service is gone: whoever uses the ip next must not inherit its rules and filters
+                self::cleanupScrub($serviceClass->getId(), $ip);
+            }
         }
+    }
+
+    /**
+     * Whether this deactivation may clean up the ip's scrub rules and filters.
+     *
+     * cancel_service() does not refuse a service that is already canceled (staff can
+     * cancel again), and a canceled row keeps its scrub_ip_ip while the ip can move on
+     * to another customer, so a second cancel never cleans up. An expired service is
+     * cleaned when it is canceled: expiry kept its rules for a renewal that is not
+     * coming, and nothing else ever releases a scrub ip (billingd never terminates
+     * scrub_ips). Nothing is cleaned while another service still holds the ip.
+     *
+     * @param object                 $serviceClass the service being deactivated (status not yet changed)
+     * @param string                 $ip
+     * @param \MyDb\Mysqli\Db|object $db
+     * @return bool
+     */
+    private static function scrubCleanupAllowed($serviceClass, $ip, $db)
+    {
+        $serviceId = $serviceClass->getId();
+        $status = (string) $serviceClass->getStatus();
+        if ($status === 'canceled') {
+            myadmin_log(self::$module, 'info', 'Scrub cleanup skipped for scrub ip '.$serviceId.': it was already canceled before this cancel', __LINE__, __FILE__, self::$module, $serviceId);
+            return false;
+        }
+        return !self::ipHeldByAnother($serviceId, $ip, $db);
+    }
+
+    /**
+     * Whether another service still uses the scrub rules of the ip (logged when one does):
+     * another scrub ip service on it that is not canceled (an expired one keeps its rules
+     * for a renewal), or a floating ip + scrub service (FLOATING_SCRUB_SERVICE_TYPES) on it
+     * that is not canceled. A plain floating ip has no scrub rules of its own, so a scrub ip
+     * service ordered on it is cleaned up like any other.
+     *
+     * @param int|string             $serviceId
+     * @param string                 $ip
+     * @param \MyDb\Mysqli\Db|object $db
+     * @return bool
+     */
+    private static function ipHeldByAnother($serviceId, $ip, $db)
+    {
+        $safeIp = $db->real_escape((string) $ip);
+        $db->query("select scrub_ip_id from scrub_ips where scrub_ip_ip='{$safeIp}' and scrub_ip_id != ".(int) $serviceId." and scrub_ip_status != 'canceled' limit 1", __LINE__, __FILE__);
+        if ($db->num_rows() > 0) {
+            $db->next_record(MYSQL_ASSOC);
+            myadmin_log(self::$module, 'warning', 'Scrub cleanup skipped for scrub ip '.$serviceId.': '.$ip.' is held by scrub ip '.($db->Record['scrub_ip_id'] ?? '?'), __LINE__, __FILE__, self::$module, $serviceId);
+            return true;
+        }
+        $db->query("select floating_ip_id from floating_ips where floating_ip_ip='{$safeIp}' and floating_ip_type in (".implode(',', array_map('intval', self::FLOATING_SCRUB_SERVICE_TYPES)).") and floating_ip_status != 'canceled' limit 1", __LINE__, __FILE__);
+        if ($db->num_rows() > 0) {
+            $db->next_record(MYSQL_ASSOC);
+            myadmin_log(self::$module, 'warning', 'Scrub cleanup skipped for scrub ip '.$serviceId.': '.$ip.' is held by floating ip '.($db->Record['floating_ip_id'] ?? '?'), __LINE__, __FILE__, self::$module, $serviceId);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Cleans up the scrub rules and filters of a scrub ip service that is being
+     * terminated (setTerminate()), unless another service still holds the ip. It never
+     * throws: a failure is logged and posted to chat, and the caller goes on.
+     *
+     * @param int|string                  $serviceId scrub ip service id
+     * @param string                      $ip        its ip
+     * @param \MyDb\Mysqli\Db|object|null $db        a handle that is free to run a query (default: a clone of the module's)
+     * @return bool true when the cleanup ran and finished
+     */
+    public static function cleanupReleasedIp($serviceId, $ip, $db = null)
+    {
+        try {
+            if ($db === null) {
+                // a clone, so a caller iterating the module handle keeps its result set
+                $db = clone get_module_db(self::$module);
+            }
+            if (self::ipHeldByAnother($serviceId, $ip, $db)) {
+                return false;
+            }
+            return self::cleanupScrub($serviceId, $ip);
+        } catch (\Throwable $e) {
+            myadmin_log(self::$module, 'error', 'Scrub cleanup for released scrub ip '.$serviceId.' ('.json_encode($ip).') failed: '.get_class($e).': '.$e->getMessage(), __LINE__, __FILE__, self::$module, $serviceId);
+            chatNotify('Scrub IP '.$serviceId.' ('.json_encode($ip).') was terminated but its scrub cleanup failed ('.$e->getMessage().') - please remove its rules/filters by hand', 'notifications');
+            return false;
+        }
+    }
+
+    /**
+     * Deletes every scrub firewall rule, geo firewall rule, firewall list rule and
+     * filter listed for a canceled scrub ip.
+     *
+     * Runs from getDeactivate() only for the cancel (not the expiry) of a service that
+     * was not already canceled and whose ip no other service holds
+     * (scrubCleanupAllowed()), and from cleanupReleasedIp() on terminate. Each list is
+     * asked for by this ip and every entry is deleted one by one through the same
+     * per-id calls the client pages use; an entry whose destination is not this ip is
+     * left alone. It never throws and never stops the cancel: a failure is logged and
+     * posted to chat for staff to finish by hand.
+     *
+     * @param int|string $serviceId scrub ip service id (for the logs)
+     * @param string     $ip        the scrub ip
+     * @return bool true when everything listed was deleted
+     */
+    public static function cleanupScrub($serviceId, $ip)
+    {
+        $ip = is_string($ip) ? trim($ip) : '';
+        $label = 'Scrub IP '.$serviceId.' ('.$ip.')';
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            myadmin_log(self::$module, 'error', 'Scrub cleanup skipped for scrub ip '.$serviceId.': invalid ip '.json_encode($ip), __LINE__, __FILE__, self::$module, $serviceId);
+            chatNotify($label.' canceled but its scrub rules/filters were not cleaned up: invalid ip', 'notifications');
+            return false;
+        }
+        $bpf = self::bpfIp($ip);
+        $deleted = 0;
+        $failed = [];
+        $skipped = [];
+        try {
+            $scrub = self::$scrubFactory !== null ? call_user_func(self::$scrubFactory) : \MyAdmin\scrub_ips\Scrub::class;
+            // firewall rules: [{id, destination_ip, ...}], deleted with "ok"
+            self::deleteListed($scrub, 'firewall rule', 'firewallListByIp', 'firewallDelete', 'destination_ip', $bpf, $deleted, $failed, $skipped);
+            // geo firewall rules: [{id, daddr, ...}]
+            self::deleteListed($scrub, 'geo firewall rule', 'geoFirewallListByIp', 'geoFirewallDelete', 'daddr', $bpf, $deleted, $failed, $skipped);
+            // firewall list rules: [{id, daddr, dport, ...}]
+            self::deleteListed($scrub, 'firewall list', 'firewallListsByIp', 'firewallListDelete', 'daddr', $bpf, $deleted, $failed, $skipped);
+            // filters: [{filter_name, daddr, dest}], no id: deleted by type + daddr/dest
+            self::deleteFilters($scrub, $bpf, $deleted, $failed, $skipped);
+        } catch (\Throwable $e) {
+            $failed[] = get_class($e).': '.$e->getMessage();
+        }
+        if (!empty($skipped)) {
+            // listed for this ip but naming another destination: leave it, but tell staff
+            myadmin_log(self::$module, 'warning', 'Scrub cleanup for scrub ip '.$serviceId.' ('.$ip.') left '.implode('; ', $skipped), __LINE__, __FILE__, self::$module, $serviceId);
+            chatNotify($label.' canceled; the scrub api listed entries for it that do not name the ip and were left alone: '.implode('; ', $skipped).' - please check them by hand', 'notifications');
+        }
+        if (empty($failed)) {
+            myadmin_log(self::$module, 'info', 'Scrub cleanup for scrub ip '.$serviceId.' ('.$ip.') removed '.$deleted.' rule(s)/filter(s)', __LINE__, __FILE__, self::$module, $serviceId);
+            return true;
+        }
+        myadmin_log(self::$module, 'error', 'Scrub cleanup for scrub ip '.$serviceId.' ('.$ip.') removed '.$deleted.', failed: '.implode('; ', $failed), __LINE__, __FILE__, self::$module, $serviceId);
+        chatNotify($label.' canceled but its scrub cleanup did not finish ('.$deleted.' removed; '.implode('; ', $failed).') - please remove what is left by hand', 'notifications');
+        return false;
+    }
+
+    /**
+     * Lists one kind of id-keyed scrub entry for the ip and deletes each one that names it.
+     * A failed listing or delete is added to $failed, a mismatched entry to $skipped.
+     *
+     * @param object|string $scrub
+     */
+    private static function deleteListed($scrub, $kind, $listMethod, $deleteMethod, $destinationField, $bpf, &$deleted, array &$failed, array &$skipped)
+    {
+        try {
+            $list = call_user_func([$scrub, $listMethod], $bpf);
+        } catch (\Throwable $e) {
+            $failed[] = $kind.'s: listing failed ('.$e->getMessage().')';
+            return;
+        }
+        $rows = self::listedRows($list);
+        if ($rows === null) {
+            $failed[] = $kind.'s: listing failed ('.substr((string) json_encode($list), 0, 200).')';
+            return;
+        }
+        foreach ($rows as $row) {
+            $id = isset($row['id']) && is_scalar($row['id']) ? (int) $row['id'] : 0;
+            if ($id <= 0) {
+                continue;
+            }
+            $destination = isset($row[$destinationField]) && is_scalar($row[$destinationField]) ? (string) $row[$destinationField] : '';
+            if ($destination !== (string) $bpf) {
+                $skipped[] = $kind.' '.$id.' ('.$destinationField.' '.json_encode($destination).')';
+                continue;
+            }
+            try {
+                $response = call_user_func([$scrub, $deleteMethod], $id);
+            } catch (\Throwable $e) {
+                $failed[] = $kind.' '.$id.': '.$e->getMessage();
+                continue;
+            }
+            if (self::deleteOk($response)) {
+                $deleted++;
+            } else {
+                $failed[] = $kind.' '.$id.': '.json_encode($response);
+            }
+        }
+    }
+
+    /**
+     * Lists the filters for the ip and deletes each one that names it.
+     *
+     * @param object|string $scrub
+     */
+    private static function deleteFilters($scrub, $bpf, &$deleted, array &$failed, array &$skipped)
+    {
+        try {
+            $list = call_user_func([$scrub, 'filterListAll'], ['daddr' => $bpf]);
+        } catch (\Throwable $e) {
+            $failed[] = 'filters: listing failed ('.$e->getMessage().')';
+            return;
+        }
+        $rows = self::listedRows($list);
+        if ($rows === null) {
+            $failed[] = 'filters: listing failed ('.substr((string) json_encode($list), 0, 200).')';
+            return;
+        }
+        foreach ($rows as $row) {
+            $name = isset($row['filter_name']) && is_scalar($row['filter_name']) ? trim((string) $row['filter_name']) : '';
+            $daddr = isset($row['daddr']) && is_scalar($row['daddr']) ? trim((string) $row['daddr']) : '';
+            $dest = isset($row['dest']) && is_scalar($row['dest']) ? trim((string) $row['dest']) : (isset($row['filtered_port']) && is_scalar($row['filtered_port']) ? trim((string) $row['filtered_port']) : '');
+            $describe = 'filter '.json_encode($name).' port '.json_encode($dest);
+            if ($daddr !== (string) $bpf) {
+                $skipped[] = $describe.' (daddr '.json_encode($daddr).')';
+                continue;
+            }
+            $type = self::filterRouteName($name);
+            if ($type === '' || !ctype_digit($dest)) {
+                $failed[] = $describe.': unknown filter type or port';
+                continue;
+            }
+            // the request the client filters page sends for the same delete
+            $request = $type === 'synproxy'
+                ? ['filtered_ip' => (int) $bpf, 'filtered_port' => (int) $dest]
+                : ['daddr' => (int) $bpf, 'dest' => (int) $dest];
+            try {
+                $response = call_user_func([$scrub, 'filterDeleteByType'], $type, $request);
+            } catch (\Throwable $e) {
+                $failed[] = $describe.': '.$e->getMessage();
+                continue;
+            }
+            if (self::deleteOk($response)) {
+                $deleted++;
+            } else {
+                $failed[] = $describe.': '.json_encode($response);
+            }
+        }
+    }
+
+    /**
+     * The delete route of a listed filter_name, as the client filters page maps it
+     * (ViewScrubIp::link_filters()): the part before the first underscore, with the
+     * listed names whose route differs mapped by hand. '' when the name is not a plain one.
+     *
+     * @param string $name
+     * @return string
+     */
+    private static function filterRouteName($name)
+    {
+        if (preg_match('/^[a-z0-9_]{1,64}$/', $name) !== 1) {
+            return '';
+        }
+        $first = explode('_', $name)[0];
+        $map = ['adaptive' => 'udp_adaptive', 'cs2' => 'cs2_udp', 'sip' => 'genericsip', 'ue5' => 'unrealengine5'];
+        return $map[$first] ?? $first;
+    }
+
+    /**
+     * The rows of a scrub listing: [] for an empty answer, null for anything that is
+     * not a list of entries (an error object, a "404 page not found" page).
+     *
+     * @param mixed $list
+     * @return array|null
+     */
+    private static function listedRows($list)
+    {
+        if ($list === null || $list === []) {
+            return [];
+        }
+        if (!is_array($list) || !isset($list[0])) {
+            return null;
+        }
+        foreach ($list as $row) {
+            if (!is_array($row)) {
+                return null;
+            }
+        }
+        return $list;
+    }
+
+    /**
+     * Whether a scrub delete call succeeded: a bare "ok", or a success/status flag.
+     *
+     * @param mixed $response
+     * @return bool
+     */
+    private static function deleteOk($response)
+    {
+        if (!is_array($response)) {
+            return false;
+        }
+        if (isset($response[0]) && is_string($response[0]) && strtolower(trim($response[0])) === 'ok') {
+            return true;
+        }
+        return !empty($response['success']) || (isset($response['status']) && in_array(strtolower((string) $response['status']), ['ok', 'success'], true));
+    }
+
+    /**
+     * An IPv4 address in the byte order the scrub api keys its entries by
+     * (uint_ip_to_bpf(): the octets reversed, as an unsigned int).
+     *
+     * @param string $ip a valid IPv4 address
+     * @return int
+     */
+    private static function bpfIp($ip)
+    {
+        return (int) sprintf('%u', ip2long(implode('.', array_reverse(explode('.', $ip)))));
     }
 
     /**
@@ -203,6 +531,8 @@ class Plugin
             				}
                     	}
                     }
+                    // the service is finished: its rules and filters go unless another service holds the ip
+                    self::cleanupReleasedIp($serviceInfo[$settings['PREFIX'].'_id'], $serviceInfo[$settings['PREFIX'].'_ip']);
                 }
             })->register();
     }
