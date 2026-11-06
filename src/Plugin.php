@@ -369,17 +369,23 @@ class Plugin
     }
 
     /**
-     * The delete route of a listed filter_name, as the client filters page maps it
-     * (ViewScrubIp::link_filters()): the part before the first underscore, with the
-     * listed names whose route differs mapped by hand. '' when the name is not a plain one.
+     * The delete route of a listed filter_name, the same mapping as core's
+     * Scrub::filterRouteName() (which the client filters pages and Scrub::filterCreate()
+     * / filterDelete() use): a route name that carries an underscore itself
+     * (udp_adaptive, cs2_udp) is its own route, any other name routes by the part
+     * before its first underscore, with the names whose route differs mapped by hand.
+     * '' when the name is not a plain one.
      *
      * @param string $name
      * @return string
      */
     private static function filterRouteName($name)
     {
-        if (preg_match('/^[a-z0-9_]{1,64}\z/', $name) !== 1) {
+        if (!is_string($name) || preg_match('/^[a-z0-9_]{1,64}\z/', $name) !== 1) {
             return '';
+        }
+        if (in_array($name, ['udp_adaptive', 'cs2_udp'], true)) {
+            return $name;
         }
         $first = explode('_', $name)[0];
         $map = ['adaptive' => 'udp_adaptive', 'cs2' => 'cs2_udp', 'sip' => 'genericsip', 'ue5' => 'unrealengine5'];

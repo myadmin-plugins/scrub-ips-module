@@ -393,6 +393,40 @@ class PluginTest extends TestCase
     }
 
     /**
+     * Each listed filter goes to the route core's Scrub::filterRouteName() gives it
+     * (the mapping the filter pages and Scrub::filterCreate()/filterDelete() use since
+     * the scrub api stopped sending filter_uri): a route that carries an underscore
+     * (udp_adaptive, cs2_udp) is its own route, the rest route by their first part.
+     */
+    public function testFiltersGoToTheSameRoutesAsCore(): void
+    {
+        $bpf = self::bpf(self::IP);
+        $routes = [
+            'udp_adaptive' => 'udp_adaptive',
+            'cs2_udp' => 'cs2_udp',
+            'cs2' => 'cs2_udp',
+            'sip_udp' => 'genericsip',
+            'ue5_udp' => 'unrealengine5',
+            'raknet_udp' => 'raknet',
+            'genericsip' => 'genericsip',
+            'unrealengine5' => 'unrealengine5',
+            'palworld' => 'palworld',
+            'mcje' => 'mcje',
+        ];
+        $listed = [];
+        $port = 1000;
+        foreach (array_keys($routes) as $name) {
+            $listed[] = ['filter_name' => $name, 'daddr' => (string) $bpf, 'dest' => (string) $port++];
+        }
+        $this->useScrub(new ScrubDouble(['filterListAll' => $listed]));
+
+        $this->dispatchDeactivate(self::SERVICE_TYPE);
+
+        $this->assertSame(array_values($routes), array_column($this->scrub->callsTo('filterDeleteByType'), 1));
+        $this->assertSame([], FrameworkSpy::$notifications);
+    }
+
+    /**
      * cleanupScrub() refuses anything but a single IPv4 address.
      */
     public function testCleanupRefusesAnInvalidIp(): void
