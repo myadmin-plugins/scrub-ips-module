@@ -524,6 +524,7 @@ class Plugin
 	            } else {
 	            	myadmin_log('myadmin', 'info', 'Unable to activate Scrub IP. ServiceId - '.$serviceInfo[$settings['PREFIX'].'_id'], __LINE__, __FILE__);
                     myadmin_log('myadmin', 'debug', 'ScrubIP Response - '.json_encode($response), __LINE__, __FILE__);
+                    chatNotify('Failed [Scrub IP '.$serviceInfo[$settings['PREFIX'].'_id'].'](https://my.interserver.net/admin/view_scrub_ip?id='.$serviceInfo[$settings['PREFIX'].'_id'].') Activation IP:'.$serviceInfo[$settings['PREFIX'].'_ip'].' Region:'.($getRegion['region_id'] ?? 2).' - Wanguard returned status '.($response['status'] ?? 'unknown').' Response: '.json_encode($response), 'notifications');
 	            }
             })->setReactivate(function ($service) {
             	$serviceInfo = $service->getServiceInfo();
@@ -560,6 +561,7 @@ class Plugin
 		            } else {
 		            	myadmin_log('myadmin', 'info', 'Unable to re-activate Scrub IP. ServiceId - '.$serviceInfo[$settings['PREFIX'].'_id'], __LINE__, __FILE__);
                         myadmin_log('myadmin', 'debug', 'ScrubIP Response - '.json_encode($response), __LINE__, __FILE__);
+                        chatNotify('Failed [Scrub IP '.$serviceInfo[$settings['PREFIX'].'_id'].'](https://my.interserver.net/admin/view_scrub_ip?id='.$serviceInfo[$settings['PREFIX'].'_id'].') Reactivation IP:'.$serviceInfo[$settings['PREFIX'].'_ip'].' Region:'.($getRegion['region_id'] ?? 2).' - Wanguard returned status '.($response['status'] ?? 'unknown').' Response: '.json_encode($response), 'notifications');
 		            }
 	            }
             })->setDisable(function ($service) {
